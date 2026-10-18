@@ -20,7 +20,7 @@
     -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   body { min-height:100vh; min-height:100dvh; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:4vh;
-    padding:16px max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
+    padding:clamp(60px,12vh,120px) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
   body.done { --on:#ff4a4a; --off:#2a0f0f; }
   body.flash #clock { animation:blink .5s steps(2) infinite; }
   @keyframes blink { 50% { opacity:.15; } }
@@ -48,12 +48,15 @@
     font-size:clamp(16px,1.8vw,26px); }
   #setup input { width:4.2em; text-align:center; padding:.4em; cursor:text; }
   #setup.hidden { display:none; }
-  .presets { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  .presets { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-left:3ch; }
   .presets button { padding:.4em .8em; }
   .hint { opacity:.45; font-size:14px; }
+  #now { position:fixed; top:max(16px,env(safe-area-inset-top)); right:max(20px,env(safe-area-inset-right));
+    font-size:clamp(28px,3.6vw,56px); letter-spacing:.05em; opacity:.85; font-weight:bold; font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
+  <div id="now"></div>
   <svg id="clock" xmlns="http://www.w3.org/2000/svg"></svg>
 
   <div class="tabs">
@@ -68,7 +71,7 @@
 
   <div id="setup" class="hidden">
     <input id="inH" type="number" inputmode="numeric" min="0" max="99" value="0"> 时
-    <input id="inM" type="number" inputmode="numeric" min="0" max="59" value="5"> 分
+    <input id="inM" type="number" inputmode="numeric" min="0" max="59" value="0"> 分
     <input id="inS" type="number" inputmode="numeric" min="0" max="59" value="0"> 秒
     <span class="presets">
       <button data-s="300">5分钟</button>
@@ -204,6 +207,7 @@ function start() {
 function pause() { running = false; cancelAnimationFrame(raf); render(); }
 function reset() {
   pause(); clearDone();
+  if (mode === "cd") $("inH").value = $("inM").value = $("inS").value = 0;
   elapsed = 0; remain = mode === "cd" ? cdTotal() : 0; render();
 }
 function clearDone() { document.body.classList.remove("done","flash"); }
@@ -211,7 +215,7 @@ function clearDone() { document.body.classList.remove("done","flash"); }
 let audio;
 function beep() {
   audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-  [0,.3,.6].forEach(t => {
+  [0,.3,.6,.9,1.2].forEach(t => {
     const o = audio.createOscillator(), g = audio.createGain();
     o.type = "square"; o.frequency.value = 880;
     g.gain.setValueAtTime(.15, audio.currentTime + t);
@@ -262,6 +266,12 @@ document.querySelectorAll(".swatches button").forEach(b => b.onclick = () => set
 let saved = null;
 try { saved = localStorage.getItem("timerTheme"); } catch (e) {}
 setTheme(["purple","pink","white"].includes(saved) ? saved : "purple");
+
+function updateNow() {
+  const d = new Date();
+  $("now").textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+updateNow(); setInterval(updateNow, 500);
 
 setMode("sw");
 </script>
