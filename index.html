@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>像素计时器</title>
+<style>
+  :root, :root[data-theme="purple"] { --on:#b57bff; --off:#1c1030; --bg:#0b0714; --ui:#2a1a4a; }
+  :root[data-theme="pink"]  { --on:#ff7eb9; --off:#2e1020; --bg:#12070d; --ui:#4a1a33; }
+  :root[data-theme="white"] { --on:#f2f2f2; --off:#262626; --bg:#0a0a0a; --ui:#333333; }
+  .swatches { display:flex; gap:10px; margin-left:20px; align-items:center; }
+  .swatches button { width:44px; height:44px; padding:0; min-width:0; border-width:3px; }
+  .swatches button[data-c="purple"] { background:#b57bff; }
+  .swatches button[data-c="pink"]   { background:#ff7eb9; }
+  .swatches button[data-c="white"]  { background:#f2f2f2; }
+  .swatches button.sel { outline:3px solid var(--on); outline-offset:3px; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--on);
+    font-family:"Courier New",monospace; -webkit-text-size-adjust:100%;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+  body { min-height:100vh; min-height:100dvh; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:4vh;
+    padding:16px max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
+  body.done { --on:#ff4a4a; --off:#2a0f0f; }
+  body.flash #clock { animation:blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity:.15; } }
+
+  .tabs { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; align-items:center; }
+  button, input { font:inherit; color:var(--on); background:transparent;
+    border:3px solid var(--on); padding:.6em 1.2em; cursor:pointer; border-radius:0;
+    text-transform:none; }
+  @media (hover:hover) { button:hover { background:var(--ui); } }
+  button { min-height:44px; }
+  button.active { background:var(--on); color:var(--bg); }
+  button.big { font-size:clamp(16px,2vw,28px); min-width:7em; }
+
+  #clock { width:66vw; max-height:60vh; display:block; }
+  #clock rect { fill:var(--off); transition:none; }
+  #clock rect.on { fill:var(--on); }
+  /* 竖屏窄屏：数字占满宽度，否则太小 */
+  @media (max-width:700px) and (orientation:portrait) { #clock { width:94vw; } }
+  /* 横屏手机：矮屏幕，压缩间距 */
+  @media (max-height:500px) { body { gap:2vh; } #clock { max-height:45vh; } .hint { display:none; } }
+  @media (hover:none) { .hint { display:none; } }
+
+  .controls { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; }
+  #setup { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center;
+    font-size:clamp(16px,1.8vw,26px); }
+  #setup input { width:4.2em; text-align:center; padding:.4em; cursor:text; }
+  #setup.hidden { display:none; }
+  .presets { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  .presets button { padding:.4em .8em; }
+  .hint { opacity:.45; font-size:14px; }
+</style>
+</head>
+<body>
+  <svg id="clock" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <div class="tabs">
+    <button id="tabSw" class="active">计时器</button>
+    <button id="tabCd">倒计时器</button>
+    <span class="swatches">
+      <button data-c="purple" title="紫色"></button>
+      <button data-c="pink" title="粉色"></button>
+      <button data-c="white" title="白色"></button>
+    </span>
+  </div>
+
+  <div id="setup" class="hidden">
+    <input id="inH" type="number" inputmode="numeric" min="0" max="99" value="0"> 时
+    <input id="inM" type="number" inputmode="numeric" min="0" max="59" value="5"> 分
+    <input id="inS" type="number" inputmode="numeric" min="0" max="59" value="0"> 秒
+    <span class="presets">
+      <button data-s="300">5分钟</button>
+      <button data-s="600">10分钟</button>
+      <button data-s="900">15分钟</button>
+      <button data-s="1800">30分钟</button>
+      <button data-s="3600">60分钟</button>
+    </span>
+  </div>
+
+  <div class="controls">
+    <button id="go" class="big">开始</button>
+    <button id="reset" class="big">重置</button>
+  </div>
+  <div class="hint">空格：开始/暂停　R：重置</div>
+
+<script>
+// 5x7 像素字体
+const FONT = {
+  0:["01110","10001","10011","10101","11001","10001","01110"],
+  1:["00100","01100","00100","00100","00100","00100","01110"],
+  2:["01110","10001","00001","00010","00100","01000","11111"],
+  3:["11110","00001","00001","01110","00001","00001","11110"],
+  4:["00010","00110","01010","10010","11111","00010","00010"],
+  5:["11111","10000","11110","00001","00001","10001","01110"],
+  6:["00110","01000","10000","11110","10001","10001","01110"],
+  7:["11111","00001","00010","00100","01000","01000","01000"],
+  8:["01110","10001","10001","01110","10001","10001","01110"],
+  9:["01110","10001","10001","01111","00001","00010","01100"],
+  ":":["0","0","1","0","1","0","0"],
+};
+// 分辨率翻倍：5x7 -> 10x14（Scale2x 算法，斜线/拐角更细腻）
+function scale2x(rows) {
+  const h = rows.length, w = rows[0].length;
+  const g = (r, c) => (r < 0 || c < 0 || r >= h || c >= w) ? "0" : rows[r][c];
+  const out = Array.from({ length: h * 2 }, () => "");
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    const P = g(r,c), A = g(r-1,c), B = g(r,c+1), C = g(r,c-1), D = g(r+1,c);
+    const e0 = (C===A && C!==D && A!==B) ? A : P;
+    const e1 = (A===B && A!==C && B!==D) ? B : P;
+    const e2 = (D===C && D!==B && C!==A) ? C : P;
+    const e3 = (B===D && B!==A && D!==C) ? D : P;
+    out[r*2]   += e0 + e1;
+    out[r*2+1] += e2 + e3;
+  }
+  return out;
+}
+for (const k in FONT) FONT[k] = scale2x(FONT[k]);
+const LAYOUT = "88:88:88";
+const ROWS = 14;
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("clock");
+const glyphs = []; // 每个字符的 rect 矩阵
+let x = 0;
+for (const ch of LAYOUT) {
+  const w = ch === ":" ? 2 : 10;
+  const cells = [];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < w; c++) {
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", x + c + .06); rect.setAttribute("y", r + .06);
+    rect.setAttribute("width", .88); rect.setAttribute("height", .88);
+    svg.appendChild(rect); cells.push(rect);
+  }
+  glyphs.push({ ch, cells, w, cur: null });
+  x += w + 2;
+}
+svg.setAttribute("viewBox", `0 0 ${x - 2} ${ROWS}`);
+
+function draw(str) {
+  glyphs.forEach((g, i) => {
+    const ch = str[i];
+    if (g.cur === ch) return;
+    g.cur = ch;
+    const rows = FONT[ch];
+    g.cells.forEach((rect, k) => {
+      const r = Math.floor(k / g.w), c = k % g.w;
+      rect.classList.toggle("on", rows[r][c] === "1");
+    });
+  });
+}
+const pad = n => String(n).padStart(2, "0");
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  return `${pad(Math.floor(sec/3600) % 100)}:${pad(Math.floor(sec/60) % 60)}:${pad(sec % 60)}`;
+}
+
+// 状态
+let mode = "sw";            // sw | cd
+let running = false;
+let elapsed = 0;            // 计时器已过毫秒
+let remain = 0;             // 倒计时剩余毫秒
+let last = 0, raf = 0;
+
+const $ = id => document.getElementById(id);
+const goBtn = $("go");
+
+function cdTotal() {
+  return (+$("inH").value||0)*3600000 + (+$("inM").value||0)*60000 + (+$("inS").value||0)*1000;
+}
+function render() {
+  draw(fmt((mode === "sw" ? elapsed : Math.ceil(remain/1000)*1000) / 1000));
+  goBtn.textContent = running ? "暂停" : "开始";
+}
+function tick(now) {
+  const dt = now - last; last = now;
+  if (mode === "sw") elapsed += dt;
+  else {
+    remain -= dt;
+    if (remain <= 0) { remain = 0; finish(); }
+  }
+  render();
+  if (running) raf = requestAnimationFrame(tick);
+}
+// iOS 要求在点击手势内创建/恢复音频，并可用 Wake Lock 防止熄屏
+let wake = null;
+async function keepAwake() {
+  try { if ("wakeLock" in navigator) wake = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && running) keepAwake();
+});
+function unlockAudio() {
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  if (audio.state === "suspended") audio.resume();
+}
+function start() {
+  unlockAudio(); keepAwake();
+  if (mode === "cd" && remain <= 0) { remain = cdTotal(); if (remain <= 0) return; }
+  clearDone();
+  running = true; last = performance.now();
+  raf = requestAnimationFrame(tick); render();
+}
+function pause() { running = false; cancelAnimationFrame(raf); render(); }
+function reset() {
+  pause(); clearDone();
+  elapsed = 0; remain = mode === "cd" ? cdTotal() : 0; render();
+}
+function clearDone() { document.body.classList.remove("done","flash"); }
+
+let audio;
+function beep() {
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  [0,.3,.6].forEach(t => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = "square"; o.frequency.value = 880;
+    g.gain.setValueAtTime(.15, audio.currentTime + t);
+    g.gain.setValueAtTime(0, audio.currentTime + t + .18);
+    o.connect(g); g.connect(audio.destination);
+    o.start(audio.currentTime + t); o.stop(audio.currentTime + t + .2);
+  });
+}
+function finish() {
+  running = false; cancelAnimationFrame(raf);
+  document.body.classList.add("done","flash");
+  beep();
+}
+
+function setMode(m) {
+  mode = m; pause(); clearDone();
+  $("tabSw").classList.toggle("active", m === "sw");
+  $("tabCd").classList.toggle("active", m === "cd");
+  $("setup").classList.toggle("hidden", m !== "cd");
+  elapsed = 0; remain = m === "cd" ? cdTotal() : 0;
+  render();
+}
+
+$("tabSw").onclick = () => setMode("sw");
+$("tabCd").onclick = () => setMode("cd");
+goBtn.onclick = () => running ? pause() : start();
+$("reset").onclick = reset;
+["inH","inM","inS"].forEach(id => $(id).addEventListener("input", () => {
+  if (mode === "cd" && !running) { remain = cdTotal(); clearDone(); render(); }
+}));
+document.querySelectorAll(".presets button").forEach(b => b.onclick = () => {
+  const s = +b.dataset.s;
+  $("inH").value = Math.floor(s/3600); $("inM").value = Math.floor(s/60) % 60; $("inS").value = s % 60;
+  if (!running) { remain = cdTotal(); clearDone(); render(); }
+});
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); goBtn.click(); }
+  else if (e.key.toLowerCase() === "r") reset();
+});
+
+function setTheme(c) {
+  document.documentElement.dataset.theme = c;
+  document.querySelectorAll(".swatches button").forEach(b => b.classList.toggle("sel", b.dataset.c === c));
+  try { localStorage.setItem("timerTheme", c); } catch (e) {}
+}
+document.querySelectorAll(".swatches button").forEach(b => b.onclick = () => setTheme(b.dataset.c));
+let saved = null;
+try { saved = localStorage.getItem("timerTheme"); } catch (e) {}
+setTheme(["purple","pink","white"].includes(saved) ? saved : "purple");
+
+setMode("sw");
+</script>
+</body>
+</html>
