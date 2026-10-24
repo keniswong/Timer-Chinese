@@ -2,12 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>像素计时器</title>
 <style>
   :root, :root[data-theme="purple"] { --on:#b57bff; --off:#1c1030; --bg:#0b0714; --ui:#2a1a4a; }
   :root[data-theme="pink"]  { --on:#ff7eb9; --off:#2e1020; --bg:#12070d; --ui:#4a1a33; }
   :root[data-theme="white"] { --on:#f2f2f2; --off:#262626; --bg:#0a0a0a; --ui:#333333; }
+  :root { --now-size:clamp(48px,7.2vw,112px); }  /* 右上角时间字号：手机/iPad/电脑自适应 */
   .swatches { display:flex; gap:10px; margin-left:20px; align-items:center; }
   .swatches button { width:44px; height:44px; padding:0; min-width:0; border-width:3px; }
   .swatches button[data-c="purple"] { background:#b57bff; }
@@ -20,7 +21,7 @@
     -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   body { min-height:100vh; min-height:100dvh; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:4vh;
-    padding:clamp(60px,12vh,120px) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
+    padding:calc(var(--now-size) * 1.1 + 24px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); }
   body.done { --on:#ff4a4a; --off:#2a0f0f; }
   body.flash #clock { animation:blink .5s steps(2) infinite; }
   @keyframes blink { 50% { opacity:.15; } }
@@ -40,7 +41,7 @@
   /* 竖屏窄屏：数字占满宽度，否则太小 */
   @media (max-width:700px) and (orientation:portrait) { #clock { width:94vw; } }
   /* 横屏手机：矮屏幕，压缩间距 */
-  @media (max-height:500px) { body { gap:2vh; } #clock { max-height:45vh; } .hint { display:none; } }
+  @media (max-height:500px) { :root { --now-size:clamp(28px,5vw,48px); } body { gap:2vh; } #clock { max-height:45vh; } .hint { display:none; } }
   @media (hover:none) { .hint { display:none; } }
 
   .controls { display:flex; gap:16px; flex-wrap:wrap; justify-content:center; }
@@ -52,7 +53,7 @@
   .presets button { padding:.4em .8em; }
   .hint { opacity:.45; font-size:14px; }
   #now { position:fixed; top:max(16px,env(safe-area-inset-top)); right:max(20px,env(safe-area-inset-right));
-    font-size:clamp(28px,3.6vw,56px); letter-spacing:.05em; opacity:.85; font-weight:bold; font-variant-numeric:tabular-nums; }
+    font-size:var(--now-size); line-height:1.1; letter-spacing:.05em; opacity:.85; font-weight:bold; font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -175,7 +176,8 @@ function render() {
   draw(fmt((mode === "sw" ? elapsed : Math.ceil(remain/1000)*1000) / 1000));
   goBtn.textContent = running ? "暂停" : "开始";
 }
-function tick(now) {
+function tick() {
+  const now = performance.now();
   const dt = now - last; last = now;
   if (mode === "sw") elapsed += dt;
   else {
@@ -183,7 +185,6 @@ function tick(now) {
     if (remain <= 0) { remain = 0; finish(); }
   }
   render();
-  if (running) raf = requestAnimationFrame(tick);
 }
 // iOS 要求在点击手势内创建/恢复音频，并可用 Wake Lock 防止熄屏
 let wake = null;
@@ -202,9 +203,10 @@ function start() {
   if (mode === "cd" && remain <= 0) { remain = cdTotal(); if (remain <= 0) return; }
   clearDone();
   running = true; last = performance.now();
-  raf = requestAnimationFrame(tick); render();
+  clearInterval(raf); raf = setInterval(tick, 100); render();  // setInterval：切到后台/锁屏时仍能触发结束提示
 }
-function pause() { running = false; cancelAnimationFrame(raf); render(); }
+function releaseWake() { try { if (wake) wake.release(); } catch (e) {} wake = null; }
+function pause() { running = false; clearInterval(raf); releaseWake(); render(); }
 function reset() {
   pause(); clearDone();
   if (mode === "cd") $("inH").value = $("inM").value = $("inS").value = 0;
@@ -225,7 +227,7 @@ function beep() {
   });
 }
 function finish() {
-  running = false; cancelAnimationFrame(raf);
+  running = false; clearInterval(raf); releaseWake();
   document.body.classList.add("done","flash");
   beep();
 }
